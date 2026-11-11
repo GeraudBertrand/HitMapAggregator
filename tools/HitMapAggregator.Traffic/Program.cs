@@ -7,15 +7,17 @@ namespace HitMapAggregator.Traffic;
 internal static class Program
 {
     private const string Usage = """
-        Usage : HitMapAggregator.Traffic <simulate|load> [options]
+        Usage : HitMapAggregator.Traffic <simulate|load|bench> [options]
           simulate   clics a debit fixe selon un scenario (--help pour les options)
           load       montee en charge NBomber, puis verdict sur le p99 du tick
+          bench      banc de mesure des quatre configs, page en direct et rapport HTML
         """;
 
     private static Task<int> Main(string[] args) => args.FirstOrDefault() switch
     {
         "simulate" => Simulate.RunAsync(args[1..]),
         "load" => Load.RunAsync(args[1..]),
+        "bench" => Bench.Bench.RunAsync(args[1..]),
         _ => Fail(),
     };
 

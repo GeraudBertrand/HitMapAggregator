@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HitMap · banc de mesure</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
+    --ok: #3fb950; --bad: #f85149; --tick: #58a6ff; --age: #eebe5c; --post: #c792ff; --rate: #7ee787;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+  h2 { font-size: 17px; margin: 0; }
+  .lead { color: var(--muted); max-width: 820px; margin: 0 0 6px; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); margin-left: 8px; vertical-align: 3px; }
+  .pill.live { color: var(--ok); border-color: var(--ok); }
+  .pill.live::before { content: "● "; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 18px 0 8px; color: var(--muted); font-size: 12px; }
+  .legend b { color: var(--text); font-weight: 600; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; margin: 12px 0 28px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; background: var(--panel); }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  tr:last-child td { border-bottom: 0; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .dim { color: var(--muted); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 22px; }
+  .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .card p { color: var(--muted); margin: 4px 0 14px; }
+  .kpis { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 14px; font-variant-numeric: tabular-nums; }
+  .kpis div { font-size: 12px; color: var(--muted); }
+  .kpis b { display: block; font-size: 18px; color: var(--text); font-weight: 600; }
+  .renders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .renders figure { margin: 0; }
+  .renders canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 6px; background: #1b2230; }
+  figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .chart { border: 1px solid var(--line); border-radius: 6px; padding: 8px 8px 4px; }
+  .chart-title { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .chart-title i { font-style: normal; }
+  .chart svg { width: 100%; height: 130px; display: block; }
+  .checks { list-style: none; padding: 0; margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 18px; font-size: 13px; }
+  .checks li::before { content: "✓ "; color: var(--ok); font-weight: 700; }
+  .checks li.bad::before { content: "✗ "; color: var(--bad); }
+  .checks span { color: var(--muted); }
+  footer { color: var(--muted); font-size: 12px; margin-top: 36px; }
+  @media (max-width: 860px) { .renders, .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>HitMapAggregator · banc de mesure <span id="status" class="pill"></span></h1>
+  <p class="lead">Extension Twitch : les viewers cliquent sur l'image du stream, le serveur (.NET 10) agrège les clics
+    en zones d'intérêt toutes les 200 ms et les pousse en SSE vers l'overlay OBS. Chaque configuration est jouée sur un
+    jeu de clics connu puis sur un monde aléatoire qui dérive, contre l'API réelle en HTTP.</p>
+  <div class="meta" id="meta"></div>
+  <div class="legend">
+    <span><b>Tick</b> : calcul d'un instantané côté serveur (champ de densité, zones, JSON)</span>
+    <span><b>Clic → publication</b> : réception du plus ancien clic intégré jusqu'à la publication SSE</span>
+    <span><b>POST</b> : aller-retour HTTP d'un clic vu du client</span>
+    <span><b>Identique au calcul local</b> : l'overlay reçoit exactement ce que donne l'algorithme sur les clics acceptés</span>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Configuration</th><th>Distribution</th><th>Votes</th><th>Clics acceptés</th><th>Pic clics/s</th><th>409</th>
+      <th>Tick p50 / p99 / max</th><th>Clic → publication p50 / p99</th><th>POST p50 / p99</th><th>Zones</th><th>Vérifications</th>
+    </tr></thead>
+    <tbody id="summary"></tbody>
+  </table></div>
+  <div id="passes"></div>
+  <footer>Rendus dessinés avec le code même de l'overlay (ellipse, contour, les deux), sur le dernier instantané reçu en SSE.
+    Latences en millisecondes.</footer>
+</main>
+<script>
+/*@RENDERERS@*/
+</script>
+<script>
+const DATA = /*@DATA@*/null;
+let run = DATA ?? { passes: [], status: 'warmup' };
+
+const nf = (v, d = 0) => (v ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const frame = document.createElement('canvas');
+frame.width = 1920;
+frame.height = 1080;
+
+function decode(snapshot) {
+  if (!snapshot || snapshot.cells) return snapshot;
+  const binary = atob(snapshot.grid.data);
+  const cells = new Float32Array(snapshot.grid.w * snapshot.grid.h);
+  for (let i = 0; i < cells.length; i++) cells[i] = binary.charCodeAt(i) / 255;
+  snapshot.cells = cells;
+  return snapshot;
+}
+
+// On dessine en 1080p puis on reduit : c'est l'overlay tel qu'OBS l'incruste, en vignette.
+function drawRender(canvas, snapshot, mode) {
+  const context = frame.getContext('2d');
+  context.fillStyle = '#1b2230';
+  context.fillRect(0, 0, 1920, 1080);
+  context.strokeStyle = 'rgba(255,255,255,.04)';
+  context.lineWidth = 2;
+  for (let x = 0; x <= 1920; x += 120) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, 1080); context.stroke(); }
+  for (let y = 0; y <= 1080; y += 120) { context.beginPath(); context.moveTo(0, y); context.lineTo(1920, y); context.stroke(); }
+  if (snapshot) window.renderOverlay(context, frame, decode(snapshot), mode);
+
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(canvas.clientWidth * ratio);
+  canvas.height = Math.round(canvas.clientWidth * ratio * 9 / 16);
+  canvas.getContext('2d').drawImage(frame, 0, 0, canvas.width, canvas.height);
+}
+
+function chart(svg, series, xMax, stop) {
+  const W = 400, H = 130, L = 34, B = 16, T = 6;
+  const values = series.flatMap((s) => s.points.map((p) => p[1])).filter((v) => v != null).sort((a, b) => a - b);
+  let yMax = Math.max(1, values[values.length - 1] ?? 0);
+  // Un pic isole (la reprise apres un arret) ecraserait toute la courbe : on borne l'axe
+  // et on annote la valeur hors echelle au lieu de la cacher.
+  const p90 = values[Math.floor(values.length * 0.9)] ?? 0;
+  const clipped = p90 > 0 && yMax > 8 * p90 ? yMax : null;
+  if (clipped) yMax = 4 * p90;
+  const step = Math.pow(10, Math.floor(Math.log10(yMax)));
+  yMax = Math.ceil(yMax / step) * step;
+  const x = (t) => L + (W - L - 4) * Math.min(1, t / xMax);
+  const y = (v) => T + (H - T - B) * (1 - Math.min(v, yMax) / yMax);
+
+  let out = '';
+  if (stop) out += `<rect x="${x(stop[0])}" y="${T}" width="${x(stop[1]) - x(stop[0])}" height="${H - T - B}" fill="rgba(248,81,73,.12)"/>` +
+    `<text x="${(x(stop[0]) + x(stop[1])) / 2}" y="${T + 11}" fill="#f85149" font-size="10" text-anchor="middle">arrêt</text>`;
+  for (const f of [0, 0.5, 1]) {
+    out += `<line x1="${L}" x2="${W - 4}" y1="${y(yMax * f)}" y2="${y(yMax * f)}" stroke="#2a313c"/>` +
+      `<text x="${L - 4}" y="${y(yMax * f) + 3}" fill="#8b949e" font-size="10" text-anchor="end">${nf(yMax * f, yMax < 10 ? 1 : 0)}</text>`;
+  }
+  for (const t of [0, xMax / 2, xMax]) {
+    out += `<text x="${x(t)}" y="${H - 3}" fill="#8b949e" font-size="10" text-anchor="middle">${nf(t)} s</text>`;
+  }
+  for (const s of series) {
+    // Une valeur nulle coupe le trace : pas de tick pendant l'arret, donc pas de ligne.
+    let segment = [];
+    for (const p of [...s.points, [0, null]]) {
+      if (p[1] != null) { segment.push(`${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`); continue; }
+      if (segment.length) out += `<polyline fill="none" stroke="${s.color}" stroke-width="1.6" stroke-linejoin="round" points="${segment.join(' ')}"/>`;
+      segment = [];
+    }
+    for (const p of s.points) {
+      if (p[1] != null && p[1] > yMax) {
+        out += `<text x="${x(p[0]) + 4}" y="${T + 10}" fill="${s.color}" font-size="10">↑ ${nf(p[1])}</text>`;
+      }
+    }
+  }
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.innerHTML = out;
+}
+
+function checksBadge(pass) {
+  if (pass.status !== 'done') return '<span class="dim">en cours</span>';
+  const ok = pass.checks.filter((c) => c.ok).length;
+  return `<span class="${ok === pass.checks.length ? 'ok' : 'bad'}">${ok} / ${pass.checks.length}</span>`;
+}
+
+function renderSummary() {
+  document.getElementById('summary').innerHTML = run.passes.map((p) => {
+    const s = p.summary;
+    if (!s) return `<tr><td>${esc(p.title)}</td><td>${esc(p.distribution)}</td><td colspan="9" class="dim">en cours…</td></tr>`;
+    return `<tr><td>${esc(p.title)}</td><td>${esc(p.distribution)}</td>
+      <td>${nf(s.votes)}</td><td>${nf(s.accepted)}</td><td>${nf(s.peakClicksPerSecond)}</td><td>${nf(s.conflicts)}</td>
+      <td>${nf(s.tickP50Ms, 2)} / ${nf(s.tickP99Ms, 2)} / ${nf(s.tickMaxMs, 2)}</td>
+      <td>${nf(s.clickAgeP50Ms)} / ${nf(s.clickAgeP99Ms)}</td>
+      <td>${nf(s.postP50Ms, 1)} / ${nf(s.postP99Ms, 1)}</td>
+      <td>${nf(s.zones)}</td><td>${checksBadge(p)}</td></tr>`;
+  }).join('');
+}
+
+function passCard(pass) {
+  const last = pass.samples[pass.samples.length - 1];
+  const s = pass.summary;
+  const kpi = (label, value) => `<div><b>${value}</b>${label}</div>`;
+  return `<div class="card-head"><h2>${esc(pass.title)} <span class="dim">· ${esc(pass.distribution)}</span></h2>${checksBadge(pass)}</div>
+    <p>${esc(pass.description)} Audience ${nf(pass.audience)}, dont ${nf(pass.clickers)} qui cliquent.</p>
+    <div class="kpis">
+      ${kpi('votes à l\'écran', nf(last?.votes ?? s?.votes))}
+      ${kpi('zones', nf(last?.zones ?? s?.zones))}
+      ${kpi('part de la zone majeure', nf(last?.topPct, 1) + ' %')}
+      ${kpi('clics/s (pic)', nf(s?.peakClicksPerSecond ?? Math.max(0, ...pass.samples.map((x) => x.clicksPerSecond))))}
+      ${s ? kpi('tick p99', nf(s.tickP99Ms, 2) + ' ms') : ''}
+      ${s ? kpi('clic → publication p99', nf(s.clickAgeP99Ms) + ' ms') : ''}
+    </div>
+    <div class="renders">
+      <figure><canvas data-mode="ellipse"></canvas><figcaption>Ellipses de covariance</figcaption></figure>
+      <figure><canvas data-mode="contour"></canvas><figcaption>Champ de densité (bandes de niveau)</figcaption></figure>
+      <figure><canvas data-mode="both"></canvas><figcaption>Les deux superposés</figcaption></figure>
+    </div>
+    ${pass.frozenSnapshot ? `<div class="renders" style="margin-top:10px">
+      <figure><canvas data-mode="both" data-frozen="1"></canvas><figcaption>Carte gelée pendant l'arrêt (cible A)</figcaption></figure></div>` : ''}
+    <div class="charts">
+      <div class="chart"><div class="chart-title">Tick serveur, max par seconde (ms) <i style="color:var(--tick)">━ tick</i></div><svg data-chart="tick"></svg></div>
+      <div class="chart"><div class="chart-title">Clic → affichage (ms) <i style="color:var(--age)">━ clic → publication (max/s)</i><i style="color:var(--post)">━ POST p99</i></div><svg data-chart="age"></svg></div>
+      <div class="chart"><div class="chart-title">Débit <i style="color:var(--rate)">━ clics acceptés/s</i></div><svg data-chart="rate"></svg></div>
+    </div>
+    ${pass.checks.length ? `<ul class="checks">${pass.checks.map((c) => `<li class="${c.ok ? '' : 'bad'}">${esc(c.label)} <span>· ${esc(c.detail)}</span></li>`).join('')}</ul>` : ''}`;
+}
+
+function drawPass(card, pass) {
+  card.querySelectorAll('canvas').forEach((canvas) =>
+    drawRender(canvas, canvas.dataset.frozen ? pass.frozenSnapshot : pass.snapshot, canvas.dataset.mode));
+  drawCharts(card, pass);
+}
+
+function drawCharts(card, pass) {
+  const xMax = run.passSeconds ? run.passSeconds + 1 : 60;
+  const stop = pass.stopAtS != null ? [pass.stopAtS, pass.restartAtS] : null;
+  const pts = (key, onlyRunning) => pass.samples.map((s) => [s.t, onlyRunning && !s.running ? null : s[key]]);
+  chart(card.querySelector('[data-chart="tick"]'), [{ points: pts('tickMaxMs', true), color: 'var(--tick)' }], xMax, stop);
+  chart(card.querySelector('[data-chart="age"]'), [
+    { points: pts('clickAgeMaxMs', true), color: 'var(--age)' },
+    { points: pts('postP99Ms', false), color: 'var(--post)' }], xMax, stop);
+  chart(card.querySelector('[data-chart="rate"]'), [{ points: pts('clicksPerSecond', false), color: 'var(--rate)' }], xMax, stop);
+}
+
+function cardFor(pass) {
+  let card = document.getElementById('pass-' + pass.id);
+  if (!card) {
+    card = document.createElement('section');
+    card.className = 'card';
+    card.id = 'pass-' + pass.id;
+    document.getElementById('passes').appendChild(card);
+  }
+  return card;
+}
+
+function renderPass(pass) {
+  const card = cardFor(pass);
+  card.innerHTML = passCard(pass);
+  drawPass(card, pass);
+}
+
+function renderHeader() {
+  const status = document.getElementById('status');
+  const labels = { warmup: 'échauffement', running: 'en direct', done: 'terminé' };
+  status.textContent = labels[run.status] ?? run.status;
+  status.className = 'pill' + (run.status === 'done' ? '' : ' live');
+  document.getElementById('meta').textContent =
+    [run.startedAt, run.machine, run.passSeconds ? `${run.passSeconds} s par passe` : ''].filter(Boolean).join(' · ');
+}
+
+function renderAll() {
+  renderHeader();
+  renderSummary();
+  document.getElementById('passes').innerHTML = '';
+  run.passes.forEach(renderPass);
+}
+
+const byId = (id) => run.passes.find((p) => p.id === id);
+
+if (DATA) {
+  renderAll();
+} else {
+  const events = new EventSource('/events');
+  events.addEventListener('state', (e) => { run = JSON.parse(e.data); renderAll(); });
+  events.addEventListener('status', (e) => { run.status = JSON.parse(e.data); renderHeader(); });
+  events.addEventListener('pass', (e) => {
+    const pass = JSON.parse(e.data);
+    const index = run.passes.findIndex((p) => p.id === pass.id);
+    if (index >= 0) run.passes[index] = pass; else run.passes.push(pass);
+    renderSummary();
+    renderPass(pass);
+  });
+  events.addEventListener('sample', (e) => {
+    const { id, sample } = JSON.parse(e.data);
+    const pass = byId(id);
+    if (!pass) return;
+    pass.samples.push(sample);
+    const card = cardFor(pass);
+    card.innerHTML = passCard(pass);
+    drawPass(card, pass);
+  });
+  events.addEventListener('snapshot', (e) => {
+    const { id, snapshot } = JSON.parse(e.data);
+    const pass = byId(id);
+    if (!pass) return;
+    pass.snapshot = snapshot;
+    cardFor(pass).querySelectorAll('canvas:not([data-frozen])').forEach((c) => drawRender(c, snapshot, c.dataset.mode));
+  });
+  // Fin du banc : le serveur ferme le flux, on garde ce qui est affiche.
+  events.addEventListener('error', () => { if (events.readyState === EventSource.CLOSED || run.status === 'done') events.close(); });
+}
+
+window.addEventListener('resize', () => run.passes.forEach((p) => drawPass(cardFor(p), p)));
+</script>
+</body>
+</html>

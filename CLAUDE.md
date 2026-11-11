@@ -76,8 +76,8 @@ d'étape, puis attente d'un « OK, passe à l'étape N+1 » explicite.
 2. API, SSE, overlay, simulateur — sans Twitch — **terminée**
 3. Intégration Twitch : JWT, tokens overlay, extension — **terminée** (validée le 2026-11-11)
 4. Regroupement et nettoyage — **terminée** (validée le 2026-11-11)
-5. **Phase de mesure** : métriques et base d'analyse de référence. À cadrer avec le
-   propriétaire avant de commencer (décidé le 2026-11-11).
+5. Phase de mesure : banc `bench` (Traffic), page en direct et rapport — **terminée**
+   (validée le 2026-11-11).
 6. **Test de l'intégration dans le vrai Twitch** (Local Test, puis hosted test).
 
 Si un test échoue : le signaler et le corriger. **Jamais** désactiver un test ni assouplir
@@ -225,6 +225,7 @@ Les tests de perf sont sautés en Debug, par conception.
 # Décisions produit datées
 
 - 2026-11-10 : `/api/control/*` réservé au diffuseur, pas aux modérateurs.
+- 2026-11-11 : `stop` publie un dernier instantané (tick final joué par la boucle du canal) : la carte gelée montre tous les clics acceptés.
 - 2026-11-11 : jeton overlay HMAC + génération persistée en JSON ; régénérer coupe les
   flux ouverts ; `/api/metrics` protégé par clé ; clics espacés de 250 ms côté extension
   seulement (confort, pas sécurité).

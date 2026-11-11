@@ -173,6 +173,24 @@ public sealed class ApiIntegrationTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Stopping_publishes_the_clicks_accepted_since_the_last_tick()
+    {
+        using HttpClient client = _factory.CreateClient();
+        string channel = NewChannel();
+        await Start(client, channel);
+
+        // Arret aussitot apres le clic, bien avant le premier tick (200 ms) : sans tick
+        // final, aucun instantane n'existerait et la lecture expirerait.
+        Assert.Equal(HttpStatusCode.NoContent, (await Post(client, channel, "U1", 0.4f, 0.4f)).StatusCode);
+        using (await Control(client, channel, HttpMethod.Post, "stop"))
+        {
+        }
+
+        JsonElement payload = await ReadSnapshot(client, channel, 1);
+        Assert.Equal(1, payload.GetProperty("totalVotes").GetInt32());
+    }
+
+    [Fact]
     public async Task Two_click_clusters_reach_the_overlay_as_two_ranked_zones()
     {
         using HttpClient client = _factory.CreateClient();
@@ -355,6 +373,24 @@ public sealed class ApiIntegrationTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Settings_can_be_set_before_the_first_start_without_opening_the_collection()
+    {
+        using HttpClient client = _factory.CreateClient();
+        string channel = NewChannel();
+
+        using (HttpResponseMessage response = await Control(client, channel, HttpMethod.Post, "settings", new { renderMode = "ellipse" }))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.Conflict, (await Post(client, channel, "U1", 0.5f, 0.5f)).StatusCode);
+
+        await Start(client, channel);
+        JsonElement state = await State(client, channel);
+        Assert.Equal("Ellipse", state.GetProperty("settings").GetProperty("renderMode").GetString());
+    }
+
+    [Fact]
     public async Task An_out_of_range_setting_is_refused()
     {
         using HttpClient client = _factory.CreateClient();
@@ -372,9 +408,10 @@ public sealed class ApiIntegrationTests : IClassFixture<ApiFactory>
         using HttpClient client = _factory.CreateClient();
         string channel = NewChannel();
 
+        // Avant tout demarrage, les reglages existent deja : la configuration se fait hors live.
         JsonElement before = await State(client, channel);
         Assert.False(before.GetProperty("running").GetBoolean());
-        Assert.Equal(JsonValueKind.Null, before.GetProperty("settings").ValueKind);
+        Assert.Equal(JsonValueKind.Object, before.GetProperty("settings").ValueKind);
 
         await Start(client, channel);
 
@@ -432,6 +469,10 @@ public sealed class ApiIntegrationTests : IClassFixture<ApiFactory>
             {
                 Assert.True(entry.GetProperty("ticks").GetInt64() > 0);
                 Assert.True(entry.GetProperty("snapshotBytes").GetInt32() > 0);
+
+                // Un clic attend au plus un tick (200 ms) avant publication.
+                double clickAge = entry.GetProperty("clickAgeP50Ms").GetDouble();
+                Assert.InRange(clickAge, 0.001, 1000);
                 found = true;
             }
         }

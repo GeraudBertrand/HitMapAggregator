@@ -10,3 +10,6 @@ data/
 artifacts/
 *.stackdump
 .claude/settings.local.json
+
+# Outils locaux telecharges (cloudflared pour le Local Test Twitch).
+.tools/

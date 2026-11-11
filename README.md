@@ -12,7 +12,7 @@ les affiche en incrustation.
     src/HitMapAggregator.Api            EBS : ingestion, pilotage, SSE, overlay (wwwroot/overlay)
     tests/HitMapAggregator.Tests        tests unitaires, d'intégration et de performance
     tests/HitMapAggregator.Testing      données synthétiques et JWT de test, partagés avec les outils
-    tools/HitMapAggregator.Traffic      trafic synthétique : simulate (à la main) et load (NBomber)
+    tools/HitMapAggregator.Traffic      trafic synthétique : simulate, load (NBomber), bench (banc de mesure)
     tools/HitMapAggregator.Visualizer   banc d'essai WinForms et export SVG
     extension/                          frontend de l'extension Twitch
 
@@ -38,7 +38,7 @@ transporté). L'URL complète s'obtient dans le panneau live_config de l'extensi
     GET   /api/control/overlay-token        JWT diffuseur · jeton overlay courant
     POST  /api/control/overlay-token/rotate JWT diffuseur · nouveau jeton, ancien refusé, flux ouverts coupés
     GET   /api/stream/heatmap               ?channelId=&token= · SSE, 401 si jeton invalide
-    GET   /api/metrics                      en-tête X-Metrics-Key · p50/p99 du tick, débit, taille, positions
+    GET   /api/metrics                      en-tête X-Metrics-Key · p50/p99 du tick et de l'âge du clic, débit, taille, positions
 
 Le canal et l'`opaque_user_id` viennent toujours du JWT ; le corps d'un clic ne porte que
 `{ x, y }`. `/api/control/*` exige le rôle `broadcaster` (pas les modérateurs).
@@ -76,11 +76,33 @@ Dossier `extension/` :
 
 - `video_overlay.html` : clic viewer, positions relatives à l'image (bandes noires
   exclues), clics espacés d'au moins 250 ms, message sur 409 ;
-- `live_config.html` : pilotage diffuseur et URL de l'overlay.
+- `config.html` : configuration hors live (URL OBS, réglages), ouverte depuis le
+  gestionnaire d'extensions ; les réglages existent avant le premier `start` ;
+- `live_config.html` : pilotage pendant le live (Démarrer, Arrêter, Nouvelle manche).
 
-L'adresse de l'EBS est dans `extension/config.js` et doit figurer dans l'allowlist « URL
-Fetching Domains » de la console Twitch. CORS : origines `https://*.ext-twitch.tv`, plus
-localhost en Development.
+`control.js` est commun aux deux pages du diffuseur. CORS : origines
+`https://*.ext-twitch.tv`, plus localhost en Development.
+
+### Local Test dans Twitch
+
+Chrome interdit à twitch.tv d'appeler `localhost` (Local Network Access) : l'API est
+exposée par un tunnel cloudflared, et sert elle-même `extension/` sous `/extension`
+(Development seulement, sans cache). `config.js` prend alors `location.origin`.
+
+1. Clés aléatoires en user-secrets pour `OverlayToken` et `MetricsKey` (celles
+   d'`appsettings.Development.json` sont publiques dans le dépôt), plus le vrai
+   `TwitchExtension`.
+2. Lancer l'API (configuration `api-twitch` de `.claude/launch.json`), puis
+   `.tools/cloudflared.exe tunnel --url http://localhost:5080` (exécutable officiel,
+   dossier ignoré par git). Sous un shell où conda fixe `SSL_CERT_FILE`, retirer cette
+   variable pour cloudflared.
+3. Console Twitch, à refaire à chaque tunnel (l'URL change) : URI de test de base =
+   `https://<tunnel>/extension/`, et `https://<tunnel>` dans les domaines de
+   récupération d'URL.
+
+Tant que le tunnel tourne, l'API de développement est publique : le couper après le test.
+En hosted test, les pages viennent du CDN Twitch : mettre l'URL absolue de l'EBS dans
+`config.js`.
 
 ## Tests
 
@@ -106,6 +128,33 @@ serveur chaud.
 Les deux signent leurs JWT avec le secret de développement (`--secret` pour en changer) ;
 un JWT par viewer est signé au démarrage, d'où quelques secondes de latence. `load`
 envoie la clé de métriques de dev (`--metrics-key` pour une autre).
+
+## Banc de mesure
+
+    dotnet run --project tools/HitMapAggregator.Traffic -c Release -- bench
+
+API lancée à part, en Release (`--url`, défaut `http://localhost:5080`). Quatre configs,
+chacune jouée sur un jeu connu puis sur le monde aléatoire, 60 s par passe (`--duration`),
+un canal neuf par passe, précédées d'un échauffement non compté :
+
+- 10 000 viewers, 1 clic chacun ;
+- 1 000 viewers, 50 clics chacun espacés de 250 ms (~4 000 clics/s) ;
+- 50 000 viewers dont 30 000 cliquent, 5 000 d'entre eux 5 fois : 30 000 votes attendus ;
+- 400 viewers en continu, collecte arrêtée 10 s au milieu, nouvelle cible à la reprise.
+
+Page en direct sur `http://localhost:5090/` (`--port`), rapport HTML autonome et JSON
+dans `artifacts/bench/` (`--out`). La page dessine les trois rendus avec le code même de
+l'overlay, embarqué dans l'outil à la compilation. `--only <10k|1k50|50k|400>` pour une
+seule config. Code de sortie 2 si une vérification échoue.
+
+Mesures : durée du tick (serveur), **clic → publication** (serveur : âge, à la
+publication, du plus ancien clic intégré par le tick), aller-retour du POST (client).
+La vérification centrale rejoue en local, avec `Core`, exactement les clics acceptés
+(204) et exige que l'instantané reçu en SSE soit le même : elle couvre ingestion,
+dédoublonnage, tick, sérialisation et diffusion, quelle que soit la distribution.
+
+Le banc doit être le **seul lecteur** de `/api/metrics` pendant la mesure : le débit et
+les maxima récents sont calculés depuis la lecture précédente.
 
 ⚠️ **NBomber est gratuit pour un usage personnel uniquement**, pas pour une organisation.
 Il tire aussi MessagePack 2.5.302, signalé par NuGet pour une vulnérabilité de gravité

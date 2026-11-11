@@ -6,6 +6,20 @@ namespace HitMapAggregator.Tests;
 public class ChannelSessionTests
 {
     [Fact]
+    public void Oldest_click_stamp_is_consumed_by_the_snapshot_that_integrates_it()
+    {
+        var session = new ChannelSession("c1");
+        session.Start();
+
+        session.Upsert(1UL, new NormalizedPoint(0.2f, 0.2f, 0L));
+        session.BuildSnapshot();
+        Assert.True(session.LastSnapshotOldestClickStamp > 0);
+
+        session.BuildSnapshot();
+        Assert.Equal(0, session.LastSnapshotOldestClickStamp);
+    }
+
+    [Fact]
     public void Upsert_overwrites_the_previous_position()
     {
         var session = new ChannelSession("c1");

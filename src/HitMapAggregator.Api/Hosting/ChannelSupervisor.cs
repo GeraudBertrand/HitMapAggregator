@@ -62,6 +62,7 @@ public sealed class ChannelSupervisor(
 
         if (_loops.TryRemove(channelId, out Loop? loop))
         {
+            loop.FinalTick = true;
             loop.Cancel();
         }
     }
@@ -156,7 +157,23 @@ public sealed class ChannelSupervisor(
         }
         catch (OperationCanceledException)
         {
-            // Arret demande : sortie normale.
+            // Arret du diffuseur : un dernier tick publie les clics acceptes depuis le
+            // precedent, sinon la carte gelee les ignorerait jusqu'a la reprise. Joue par
+            // la boucle elle-meme, seule autorisee a appeler BuildSnapshot.
+            // shortcut: une reprise dans la foulee lance une nouvelle boucle sans attendre
+            // celle-ci ; sans danger tant que ce tick (quelques ms) finit avant le premier
+            // tick de la nouvelle (200 ms). A revoir si un tick depasse cet ordre de grandeur.
+            if (loop.FinalTick)
+            {
+                try
+                {
+                    Tick(loop.Session, channelId);
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Tick final en echec sur le canal {Channel}", channelId);
+                }
+            }
         }
     }
 
@@ -169,8 +186,13 @@ public sealed class ChannelSupervisor(
         string payload = serializer.Serialize(snapshot, session.Settings);
         double elapsed = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
 
-        metrics.RecordTick(channelId, elapsed, payload.Length, snapshot.TotalVotes);
         broadcaster.Publish(channelId, payload);
+
+        // Mesure apres la publication : c'est l'instant ou l'overlay peut voir le clic.
+        long oldestClick = session.LastSnapshotOldestClickStamp;
+        double? clickAgeMs = oldestClick == 0 ? null : Stopwatch.GetElapsedTime(oldestClick).TotalMilliseconds;
+
+        metrics.RecordTick(channelId, elapsed, payload.Length, snapshot.TotalVotes, clickAgeMs);
     }
 
     private sealed class Loop(ChannelSession session, CancellationTokenSource cancellation)
@@ -182,6 +204,9 @@ public sealed class ChannelSupervisor(
         public Task Task { get; set; } = Task.CompletedTask;
 
         public int Restarts { get; set; }
+
+        /// <summary>Arret du diffuseur, par opposition a l'arret de l'hote : publier une derniere fois.</summary>
+        public volatile bool FinalTick;
 
         /// <summary>
         /// Annule sans exiger de gagner la course contre la fin de la boucle.

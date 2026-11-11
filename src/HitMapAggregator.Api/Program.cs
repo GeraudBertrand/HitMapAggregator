@@ -5,6 +5,7 @@ using HitMapAggregator.Api.Hosting;
 using HitMapAggregator.Api.Realtime;
 using HitMapAggregator.Api.Security;
 using HitMapAggregator.Core.Session;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -45,6 +46,21 @@ WebApplication app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Local Test Twitch : la « Testing Base URI » doit etre en HTTPS. Servir l'extension depuis
+// l'EBS la place sur la meme origine, donc sans CORS. Jamais hors Development : en hosted
+// test et en production, Twitch heberge ces fichiers sur son CDN.
+string extensionRoot = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", "extension"));
+if (isDevelopment && Directory.Exists(extensionRoot))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(extensionRoot),
+        RequestPath = "/extension",
+        // Fichiers edites pendant le Local Test : sans ceci Chrome garde l'ancienne version.
+        OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache",
+    });
+}
 
 app.UseCors();
 app.UseAuthentication();

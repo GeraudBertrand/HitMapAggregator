@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using HitMapAggregator.Core.Aggregation;
 using HitMapAggregator.Core.Models;
@@ -20,6 +21,9 @@ public sealed class ChannelSession(string channelId)
 
     private volatile bool _running;
 
+    // Horodatage Stopwatch du premier clic arrive depuis le dernier instantane, 0 sinon.
+    private long _oldestPendingStamp;
+
     public string ChannelId { get; } = channelId;
 
     /// <summary>
@@ -33,6 +37,16 @@ public sealed class ChannelSession(string channelId)
     /// commandes du streamer n'ont pas a se synchroniser avec la boucle de tick.
     /// </summary>
     public SessionSettings Settings { get; set; } = new();
+
+    /// <summary>
+    /// Horodatage <see cref="Stopwatch"/> du plus vieux clic integre par le dernier
+    /// <see cref="BuildSnapshot"/>, ou 0 s'il n'en integrait aucun de nouveau.
+    /// </summary>
+    /// <remarks>
+    /// Sert a mesurer le delai clic → publication. Seule la boucle de tick du canal appelle
+    /// <see cref="BuildSnapshot"/>, donc la lecture qui suit ne peut pas etre doublee.
+    /// </remarks>
+    public long LastSnapshotOldestClickStamp { get; private set; }
 
     public int PositionCount
     {
@@ -78,6 +92,12 @@ public sealed class ChannelSession(string channelId)
             }
 
             _positions[userKey] = point;
+
+            if (_oldestPendingStamp == 0)
+            {
+                _oldestPendingStamp = Stopwatch.GetTimestamp();
+            }
+
             return true;
         }
     }
@@ -140,6 +160,11 @@ public sealed class ChannelSession(string channelId)
     {
         lock (_gate)
         {
+            // Releve sous le meme verrou que la copie : un clic est soit dans cet
+            // instantane et compte ici, soit apres et compte pour le suivant.
+            LastSnapshotOldestClickStamp = _oldestPendingStamp;
+            _oldestPendingStamp = 0;
+
             if (_snapshotBuffer.Length < _positions.Count)
             {
                 _snapshotBuffer = new NormalizedPoint[BitOperations.RoundUpToPowerOf2((uint)_positions.Count)];

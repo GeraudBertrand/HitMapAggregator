@@ -1,3 +1,3 @@
-// Adresse publique de l'EBS (HitMapAggregator.Api), sans barre finale.
-// Doit aussi figurer dans « Allowlist for URL Fetching Domains » de la console Twitch.
-window.HITMAP_EBS_URL = 'http://localhost:5080';
+// Local Test : l'API sert aussi l'extension (via le tunnel, voir README), donc meme origine.
+// shortcut: faux en hosted test (pages sur le CDN Twitch), y mettre alors l'URL absolue de l'EBS.
+window.HITMAP_EBS_URL = location.origin;

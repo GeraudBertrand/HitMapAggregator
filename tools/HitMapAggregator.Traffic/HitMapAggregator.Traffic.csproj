@@ -4,12 +4,24 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <!-- Le banc sert lui-meme sa page en direct (Kestrel + SSE). -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\tests\HitMapAggregator.Testing\HitMapAggregator.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="NBomber" />
+  </ItemGroup>
+
+  <!-- Les rendus de l'overlay sont embarques tels quels : la page du banc dessine avec le
+       meme code que la browser source, pas avec une copie qui pourrait diverger. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\HitMapAggregator.Api\wwwroot\overlay\renderers\*.js" LogicalName="renderers/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Bench\bench.html" LogicalName="bench.html" />
   </ItemGroup>
 
 </Project>

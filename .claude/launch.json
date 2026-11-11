@@ -6,6 +6,12 @@
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--project", "src/HitMapAggregator.Api", "-c", "Release", "--no-build", "--urls", "http://localhost:5080"],
       "port": 5080
+    },
+    {
+      "name": "api-twitch",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/HitMapAggregator.Api", "-c", "Release", "--no-build", "--urls", "https://localhost:5081;http://localhost:5080"],
+      "port": 5081
     }
   ]
 }

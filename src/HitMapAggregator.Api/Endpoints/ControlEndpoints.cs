@@ -29,11 +29,11 @@ public static class ControlEndpoints
         {
             string channelId = TwitchClaims.ChannelOf(user);
 
-            // Pas de session tant que le streamer n'a jamais lance la collecte : les
-            // reglages n'existent pas encore, et le panneau doit le savoir.
-            return registry.TryGet(channelId, out ChannelSession? session)
-                ? Results.Ok(new { channelId, running = session.IsRunning, settings = session.Settings })
-                : Results.Ok(new { channelId, running = false, settings = (SessionSettings?)null });
+            // La session nait ici, arretee, si besoin : la page de configuration regle la
+            // hitmap hors live, avant tout premier demarrage. Elle n'accepte pas de clic
+            // pour autant, une session nait toujours collecte fermee.
+            ChannelSession session = registry.GetOrCreate(channelId);
+            return Results.Ok(new { channelId, running = session.IsRunning, settings = session.Settings });
         });
 
         control.MapPost("/start", (ClaimsPrincipal user, ChannelSupervisor supervisor) =>
@@ -75,15 +75,12 @@ public static class ControlEndpoints
             SettingsPatch patch,
             ChannelSessionRegistry registry) =>
         {
-            if (!registry.TryGet(TwitchClaims.ChannelOf(user), out ChannelSession? session))
-            {
-                return Results.NotFound(new { error = "canal inconnu" });
-            }
-
             if (Validate(patch) is { } error)
             {
                 return Results.BadRequest(new { error });
             }
+
+            ChannelSession session = registry.GetOrCreate(TwitchClaims.ChannelOf(user));
 
             // Remplacement atomique d'une instance immuable : aucun verrou n'est
             // necessaire entre cette requete et la boucle de tick.
