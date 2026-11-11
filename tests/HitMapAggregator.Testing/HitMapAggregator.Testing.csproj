@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Donnees synthetiques et JWT de test, partages par les tests et les outils.
+       Bibliotheque a part pour que les outils n'embarquent pas le runner xUnit. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HitMapAggregator.Core\HitMapAggregator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+  </ItemGroup>
+
+</Project>

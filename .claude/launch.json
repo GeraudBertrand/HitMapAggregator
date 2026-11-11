@@ -4,7 +4,7 @@
     {
       "name": "api",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "HitMapAggregator.Api", "-c", "Release", "--no-build", "--urls", "http://localhost:5080"],
+      "runtimeArgs": ["run", "--project", "src/HitMapAggregator.Api", "-c", "Release", "--no-build", "--urls", "http://localhost:5080"],
       "port": 5080
     }
   ]

@@ -1,8 +1,14 @@
 <Solution>
-  <Project Path="HitMapAggregator.Core/HitMapAggregator.Core.csproj" />
-  <Project Path="HitMapAggregator.Api/HitMapAggregator.Api.csproj" />
-  <Project Path="HitMapAggregator.Tests/HitMapAggregator.Tests.csproj" />
-  <Project Path="HitMapAggregator.Visualizer/HitMapAggregator.Visualizer.csproj" />
-  <Project Path="HitMapAggregator.LoadTests/HitMapAggregator.LoadTests.csproj" />
-  <Project Path="tools/click-simulator/ClickSimulator.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/HitMapAggregator.Core/HitMapAggregator.Core.csproj" />
+    <Project Path="src/HitMapAggregator.Api/HitMapAggregator.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HitMapAggregator.Testing/HitMapAggregator.Testing.csproj" />
+    <Project Path="tests/HitMapAggregator.Tests/HitMapAggregator.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/HitMapAggregator.Visualizer/HitMapAggregator.Visualizer.csproj" />
+    <Project Path="tools/HitMapAggregator.Traffic/HitMapAggregator.Traffic.csproj" />
+  </Folder>
 </Solution>

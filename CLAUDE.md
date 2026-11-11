@@ -69,14 +69,16 @@ En cas d'arbitrage : **correction > testabilité > performance > élégance > ap
 
 ## Protocole d'étapes
 
-Quatre étapes, chacune terminée par un **arrêt obligatoire** : tests verts, rapport de fin
+Chaque étape se termine par un **arrêt obligatoire** : tests verts, rapport de fin
 d'étape, puis attente d'un « OK, passe à l'étape N+1 » explicite.
 
 1. Noyau métier (`Core` + `Tests`) — **terminée**
 2. API, SSE, overlay, simulateur — sans Twitch — **terminée**
 3. Intégration Twitch : JWT, tokens overlay, extension — **terminée** (validée le 2026-11-11)
-4. **Regroupement et nettoyage** : condenser l'ensemble en un projet propre.
-   Décidé le 2026-09-09, à ne pas oublier.
+4. Regroupement et nettoyage — **terminée** (validée le 2026-11-11)
+5. **Phase de mesure** : métriques et base d'analyse de référence. À cadrer avec le
+   propriétaire avant de commencer (décidé le 2026-11-11).
+6. **Test de l'intégration dans le vrai Twitch** (Local Test, puis hosted test).
 
 Si un test échoue : le signaler et le corriger. **Jamais** désactiver un test ni assouplir
 une assertion pour la faire passer.
@@ -185,157 +187,44 @@ statistique si le besoin s'en fait sentir.
 4 passes de boîte **par axe** (8 au total). Les poids de dispersion
 (`FillScatterWeights`) rendent le flou exactement conservatif en masse, bords compris.
 
-## Lancer les tests
+---
 
-`dotnet test` **ne fonctionne pas sur cette machine** : le SDK .NET 10 a supprimé le
-chemin VSTest, et son intégration Microsoft.Testing.Platform n'arrive pas à dialoguer avec
-l'exécutable de test (zéro test découvert, code 5). Reproduit sur un template
-`dotnet new xunit3` vierge, avec deux versions de SDK et deux configurations de paquets :
-c'est l'environnement, pas le projet.
+# Usage et structure
 
-Utiliser le runner in-process de xUnit :
+Commandes, routes, secrets, extension et outils : voir **README.md**. Ce fichier ne garde
+que ce qui guide le travail sur le code.
 
-    dotnet run --project HitMapAggregator.Tests -c Release
+Disposition : `src/` (Core, Api), `tests/` (Tests, et Testing pour les données
+synthétiques et JWT partagés avec les outils), `tools/` (Traffic, Visualizer),
+`extension/`. Réglages communs dans `Directory.Build.props`, versions de paquets
+uniquement dans `Directory.Packages.props` — jamais de `Version=` dans un `.csproj`.
 
-Options utiles : `-notrait "Category=Performance"` pour exclure les mesures,
-`-showLiveOutput` pour voir les chiffres de perf.
+Lancer les tests : `dotnet run --project tests/HitMapAggregator.Tests -c Release`.
+`dotnet test` est **cassé sur cette machine** (le SDK .NET 10 ne dialogue pas avec
+l'exécutable de test, reproduit sur un template vierge) : ne pas perdre de temps dessus.
+Les tests de perf sont sautés en Debug, par conception.
 
-L'Explorateur de tests de **Visual Studio fonctionne normalement**, lui — c'est le
-`dotnet test` en ligne de commande qui est cassé.
+# Pièges à connaître
 
-Les tests de perf sont **ignorés sur une build Debug** : une assertion de temps sur du
-code non optimisé ne mesure rien. Le saut est statique (`SkipUnless` sur `[Fact]`), donc
-il ne lève aucune exception et le débogueur ne s'arrête pas dessus. Pour les exécuter
-dans Visual Studio, basculer la configuration de la solution sur Release.
+- **Le canal et le rôle viennent du JWT**, jamais d'un paramètre ou du corps. Les routes
+  `/api/control/*` n'ont aucun paramètre de canal, et doivent rester ainsi.
+- **La non-journalisation de l'URL de l'overlay** repose sur `Microsoft.AspNetCore:
+  Warning` dans les appsettings. Le test `The_overlay_token_never_reaches_the_logs`
+  échoue si on l'abaisse : ne pas l'abaisser, ne pas assouplir le test.
+- **Les générations de jetons overlay** sont un état persisté sur disque
+  (`data/overlay-generations.json`). Un fichier illisible bloque le démarrage, exprès.
+  Une seule instance supposée : à revoir avant de passer à plusieurs instances.
+- **Fermer un flux SSE** se fait en complétant le canal de l'abonné
+  (`SnapshotBroadcaster.Disconnect`), pas par annulation : une annulation remonterait en
+  erreur sur une connexion encore vivante.
+- **`HitMapAggregator.Testing` contient `Scenario`**, qui entre en conflit avec le
+  `Scenario` de NBomber : `Load.cs` utilise donc des noms qualifiés.
+- **L'iframe d'extension est sandboxée** : pas de `confirm()`/`alert()`, et le
+  presse-papiers peut être refusé.
 
-## API (étape 2)
+# Décisions produit datées
 
-Projet `HitMapAggregator.Api`. Lancer :
-
-    dotnet run --project HitMapAggregator.Api -c Release --urls http://localhost:5080
-
-Overlay : `http://localhost:5080/overlay/?channel=<id>&token=<jeton>`, avec
-`&mode=ellipse` ou `&mode=contour` pour forcer un rendu (sinon on suit le `renderMode`
-transporté). L'URL complète s'obtient dans le panneau live_config de l'extension.
-
-### Routes
-
-    POST  /api/clicks                       JWT viewer · 204 · 400 · 401 · 409 collecte fermée
-    GET   /api/control/state                JWT diffuseur · running + réglages (null sans session)
-    POST  /api/control/start                JWT diffuseur · ouvre la collecte, démarre le tick
-    POST  /api/control/stop                 JWT diffuseur · ferme la collecte, gèle sans effacer
-    POST  /api/control/reset                JWT diffuseur · vide les positions
-    POST  /api/control/settings             JWT diffuseur · patch JSON partiel
-    GET   /api/control/overlay-token        JWT diffuseur · jeton overlay courant
-    POST  /api/control/overlay-token/rotate JWT diffuseur · nouveau jeton, ancien refusé, flux ouverts coupés
-    GET   /api/stream/heatmap               ?channelId=&token= · SSE, 401 si jeton invalide
-    GET   /api/metrics                      en-tête X-Metrics-Key · p50/p99 du tick, débit, taille, positions
-
-Le canal et l'`opaque_user_id` viennent **toujours** du JWT ; le corps d'un clic ne porte
-que `{ x, y }`. `/api/control/*` exige le rôle `broadcaster` (pas les modérateurs,
-décision du 2026-11-10).
-
-### Secrets (étape 3)
-
-Section `Secrets` : `TwitchExtension` (secret base64 de la console Twitch, vérifie les JWT),
-`OverlayToken` (clé base64 à nous, signe les jetons overlay), tous deux d'au moins 32
-octets, et `MetricsKey` (au moins 16 caractères, protège `/api/metrics`). Sinon l'API
-refuse de démarrer. Les tests de charge envoient la clé de dev, `--metrics-key` pour une autre. `appsettings.Development.json` contient des
-valeurs de **développement** ; pour tester dans Twitch, surcharger `TwitchExtension` par
-le vrai secret via `dotnet user-secrets` ou la variable `Secrets__TwitchExtension`.
-
-Jeton overlay = HMAC(`OverlayToken`, canal + génération). Les générations sont persistées
-dans `Overlay:GenerationsPath` (défaut `data/overlay-generations.json` sous la racine du
-contenu), écrites à chaque régénération, relues au démarrage. Un fichier illisible bloque
-le démarrage plutôt que de remettre les générations à zéro. ⚠️ Suppose **une seule
-instance** avec un disque persistant : à revoir avant de passer à plusieurs instances.
-
-Régénérer coupe aussi les flux SSE ouverts (`SnapshotBroadcaster.Disconnect`). Limite
-connue : un flux validé juste avant la rotation mais abonné juste après survit.
-
-Les clics sont espacés d'au moins 250 ms **côté extension seulement** (décision du
-2026-11-11) : confort, pas sécurité ; la déduplication protège l'exactitude du vote.
-
-La non-journalisation de l'URL repose sur `Microsoft.AspNetCore: Warning` dans les
-appsettings. Le test `The_overlay_token_never_reaches_the_logs` échoue si on l'abaisse.
-
-### Extension
-
-Dossier `extension/` : `video_overlay.html` (clic viewer, gère le 409) et
-`live_config.html` (pilotage diffuseur, URL de l'overlay). L'adresse de l'EBS est dans
-`extension/config.js` et doit figurer dans l'allowlist « URL Fetching Domains » de la
-console Twitch. CORS : origines `https://*.ext-twitch.tv`, plus localhost en Development.
-
-`start`/`stop` pilotent la collecte **à la source** : un clic reçu pendant l'arrêt est
-refusé en 409. C'est délibéré et sans rapport avec la règle « filtrer à l'agrégation »,
-qui protège la réversibilité du réglage anonymes.
-
-Les viewers ne reçoivent rien du serveur : le seul moyen pour l'extension d'apprendre
-qu'un canal est arrêté sera ce 409 en réponse à un clic. À prévoir à l'étape 3.
-
-### Simulateur
-
-    dotnet run --project tools/click-simulator -c Release -- --url http://localhost:5080 --channel demo --scenario random --rate 3000 --duration 60
-
-Scénarios : `random` (monde aléatoire dérivant) ou les six jeux figés. Le simulateur et
-les tests de charge signent leurs JWT avec le secret de développement (`--secret` pour
-en changer) ; un JWT par viewer est signé au démarrage, d'où quelques secondes de latence.
-
-### Tests de charge
-
-    dotnet run --project HitMapAggregator.LoadTests -c Release -- --url http://localhost:5080 --clients 20000
-
-⚠️ **NBomber est gratuit pour un usage personnel uniquement**, pas pour une organisation.
-À vérifier si le projet devient commercial.
-
-## Visualiseur
-
-Deux modes dans le même exécutable.
-
-**Banc d'essai interactif** (WinForms, sans argument) :
-
-    dotnet run --project HitMapAggregator.Visualizer -c Release
-
-Un monde de clics **tiré au hasard** (`RandomWorld`) : positions, tailles, orientations et
-parts sont aléatoires, et les parts suivent une **marche aléatoire** à chaque tick. Cette
-dérive est essentielle — sans elle les pourcentages resteraient collés à leur valeur
-injectée et aucun classement ne s'inverserait, donc il n'y aurait jamais rien à détecter.
-Les six scénarios figés ne servent plus qu'à l'export SVG, comme référence de non-régression.
-
-`ZoneTracker` donne une **identité stable** aux zones d'un tick à l'autre (appariement par
-proximité des centres). Sans lui, l'agrégation étant sans mémoire, « cette zone est passée
-de 30 à 42 % » n'aurait aucun sens. Il en découle :
-
-- un graphique des parts sur 48 s, une courbe par zone ;
-- un journal des **dépassements** (changement de leader, entrée dans le top N) ;
-- un flash blanc sur les zones concernées, dans le canevas et dans le graphique.
-
-`MajorZones` met en avant les N meilleures : pastille de rang, trait épais, couleur pleine ;
-les autres restent en trait fin. C'est un drapeau d'affichage transporté, le serveur ne
-branche jamais dessus. Côté overlay, cela se réduit à `zones.slice(0, majorZones)`.
-
-Le panneau **« Ce que reçoit l'overlay »** affiche la liste triée telle quelle, sans
-information privilégiée — c'est la vue de référence. La case « Couleurs par rang » colorie
-le canevas comme le fera l'overlay (par position, donc la couleur change de zone quand le
-classement s'inverse) ; la décocher repasse aux couleurs d'identité, utiles pour le
-diagnostic mais impossibles en production.
-
-La barre du bas compare **parts injectées et parts détectées** — la mesure directe de si
-l'agrégation réagit correctement. Le chronomètre (instantané / médiane / p99) écarte les
-premiers ticks, qui paieraient la compilation JIT.
-
-Il pilote un vrai `ChannelSession`, donc le chemin exercé et le temps mesuré sont ceux de
-la production.
-
-Capture reproductible (Windows refuse de mettre au premier plan une fenêtre lancée depuis
-un terminal, donc l'application se dessine elle-même) :
-
-    dotnet run --project HitMapAggregator.Visualizer -c Release -- shot artifacts/explorer.png
-
-Le projet cible `net10.0-windows` pour WinForms. `Core` et `Tests` restent en `net10.0`.
-
-**Export SVG en lot** (inchangé) :
-
-    dotnet run --project HitMapAggregator.Visualizer -c Release -- all artifacts/svg 20000
-
-Écrit un SVG par scénario synthétique (champ de densité, clics, ellipses, pourcentages).
+- 2026-11-10 : `/api/control/*` réservé au diffuseur, pas aux modérateurs.
+- 2026-11-11 : jeton overlay HMAC + génération persistée en JSON ; régénérer coupe les
+  flux ouverts ; `/api/metrics` protégé par clé ; clics espacés de 250 ms côté extension
+  seulement (confort, pas sécurité).

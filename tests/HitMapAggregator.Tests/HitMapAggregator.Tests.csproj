@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="HitMapAggregator.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HitMapAggregator.Core\HitMapAggregator.Core.csproj" />
+    <ProjectReference Include="..\..\src\HitMapAggregator.Api\HitMapAggregator.Api.csproj" />
+    <ProjectReference Include="..\HitMapAggregator.Testing\HitMapAggregator.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

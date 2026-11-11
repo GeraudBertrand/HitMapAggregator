@@ -1,7 +1,7 @@
 using HitMapAggregator.Core;
 using HitMapAggregator.Core.Models;
 
-namespace HitMapAggregator.Visualizer;
+namespace HitMapAggregator.Testing;
 
 /// <summary>
 /// Une carte de clics tiree au hasard, dont les poids derivent dans le temps.
@@ -16,7 +16,7 @@ namespace HitMapAggregator.Visualizer;
 /// Les amas sont decrits dans l'espace corrige de l'aspect (voir <see cref="Grid"/>) :
 /// un sigma est une fraction de la LARGEUR, un angle est celui qu'on voit a l'ecran.
 /// </remarks>
-internal sealed class RandomWorld
+public sealed class RandomWorld
 {
     private const float Margin = 1e-4f;
 

@@ -1,7 +1,7 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace HitMapAggregator.Tests;
+namespace HitMapAggregator.Testing;
 
 /// <summary>
 /// Fabrique des JWT d'extension au format Twitch, pour les tests, le simulateur et les
