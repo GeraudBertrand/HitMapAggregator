@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>HitMap pilotage</title>
+  <style>
+    body {
+      font: 13px sans-serif;
+      margin: 10px;
+    }
+
+    section {
+      margin-bottom: 14px;
+    }
+
+    button {
+      margin-right: 4px;
+    }
+
+    #overlay-url {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    #error {
+      color: #c0392b;
+    }
+  </style>
+</head>
+<body>
+  <section>
+    <strong>Collecte :</strong> <span id="status">...</span>
+    <div>
+      <button id="start">Demarrer</button>
+      <button id="stop">Arreter</button>
+      <button id="reset">Effacer les votes</button>
+    </div>
+  </section>
+
+  <section id="settings">
+    <label>Rendu
+      <select id="renderMode">
+        <option value="Both">ellipses + densite</option>
+        <option value="Ellipse">ellipses</option>
+        <option value="Contour">densite</option>
+      </select>
+    </label>
+    <br>
+    <label><input type="checkbox" id="visible"> Overlay visible</label>
+    <br>
+    <label><input type="checkbox" id="allowAnonymous"> Compter les viewers non connectes</label>
+  </section>
+
+  <section>
+    <strong>URL de la browser source OBS</strong> (secrete, ne pas l'afficher a l'ecran)
+    <input id="overlay-url" type="password" readonly>
+    <div>
+      <button id="show">Afficher</button>
+      <button id="copy">Copier</button>
+      <button id="rotate">Regenerer</button>
+    </div>
+  </section>
+
+  <div id="error"></div>
+
+  <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+  <script src="config.js"></script>
+  <script src="live_config.js"></script>
+</body>
+</html>

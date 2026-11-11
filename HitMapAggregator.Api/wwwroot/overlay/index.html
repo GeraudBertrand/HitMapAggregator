@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>HitMap overlay</title>
+  <style>
+    /* Fond transparent : la browser source OBS s'incruste par-dessus la video. */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Diagnostic de connexion, invisible tant que tout va bien. */
+    #status {
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      font: 12px monospace;
+      color: #ff9d5c;
+      background: rgba(0, 0, 0, .55);
+      padding: 3px 7px;
+      border-radius: 3px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="heatmap"></canvas>
+  <div id="status"></div>
+  <script type="module" src="./client.js"></script>
+</body>
+</html>

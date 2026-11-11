@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+
+# Etat d'execution : generations des jetons overlay, propre a chaque serveur.
+data/
+
+# Sorties regenerables (captures, SVG, rapports de charge).
+artifacts/
+*.stackdump
+.claude/settings.local.json

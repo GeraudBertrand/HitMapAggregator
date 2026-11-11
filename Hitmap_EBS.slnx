@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="HitMapAggregator.Core/HitMapAggregator.Core.csproj" />
+  <Project Path="HitMapAggregator.Api/HitMapAggregator.Api.csproj" />
+  <Project Path="HitMapAggregator.Tests/HitMapAggregator.Tests.csproj" />
+  <Project Path="HitMapAggregator.Visualizer/HitMapAggregator.Visualizer.csproj" />
+  <Project Path="HitMapAggregator.LoadTests/HitMapAggregator.LoadTests.csproj" />
+  <Project Path="tools/click-simulator/ClickSimulator.csproj" />
+</Solution>

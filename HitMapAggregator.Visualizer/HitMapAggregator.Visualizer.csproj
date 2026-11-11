@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HitMapAggregator.Visualizer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HitMapAggregator.Core\HitMapAggregator.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Les scenarios synthetiques vivent dans le projet de tests (leur place logique).
+       On partage le fichier source plutot que de referencer le projet de tests,
+       ce qui trainerait tout le runner xUnit dans l'outil. -->
+  <ItemGroup>
+    <Compile Include="..\HitMapAggregator.Tests\SyntheticData.cs" Link="SyntheticData.cs" />
+  </ItemGroup>
+
+</Project>
