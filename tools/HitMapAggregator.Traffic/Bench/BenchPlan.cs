@@ -1,6 +1,3 @@
-using HitMapAggregator.Core.Models;
-using HitMapAggregator.Testing;
-
 namespace HitMapAggregator.Traffic.Bench;
 
 internal enum Distribution
@@ -32,9 +29,9 @@ internal sealed class ClickPlan
 
     public required int IntervalMs { get; init; }
 
-    public required PointSource Before { get; init; }
+    public required Crowd Before { get; init; }
 
-    public PointSource? After { get; init; }
+    public Crowd? After { get; init; }
 
     /// <summary>Arret de la collecte, puis reprise : seule la config 400 s'en sert.</summary>
     public long? StopAtMs { get; init; }
@@ -45,69 +42,28 @@ internal sealed class ClickPlan
 
     public long? ExpectedAccepted { get; init; }
 
-    public PointSource SourceAt(long elapsedMs) =>
+    public Crowd SourceAt(long elapsedMs) =>
         After is not null && RestartAtMs is { } restart && elapsedMs >= restart ? After : Before;
-}
-
-/// <summary>Tire les positions : jeu synthetique fige, ou monde aleatoire qui derive.</summary>
-internal sealed class PointSource
-{
-    private readonly NormalizedPoint[]? _pool;
-    private readonly RandomWorld? _world;
-
-    private PointSource(NormalizedPoint[]? pool, RandomWorld? world)
-    {
-        _pool = pool;
-        _world = world;
-    }
-
-    public static PointSource Pool(NormalizedPoint[] pool) => new(pool, null);
-
-    public static PointSource World(int seed) => new(null, new RandomWorld(seed, 6, 0.08f));
-
-    public NormalizedPoint Next()
-    {
-        if (_pool is not null)
-        {
-            return _pool[Random.Shared.Next(_pool.Length)];
-        }
-
-        lock (_world!)
-        {
-            return _world.Sample(0L);
-        }
-    }
-
-    /// <summary>Un pas de derive ; sans effet sur un jeu fige.</summary>
-    public void Drift()
-    {
-        if (_world is null)
-        {
-            return;
-        }
-
-        lock (_world)
-        {
-            _world.Drift(0.02f);
-        }
-    }
 }
 
 internal sealed record BenchConfig(string Id, string Title, string Description, string KnownScenario)
 {
+    /// <summary>Un viewer qui reclique change d'avis en moyenne une fois par minute.</summary>
+    private const float MindChangeMs = 60_000f;
+
     public static IReadOnlyList<BenchConfig> All { get; } =
     [
         new("10k", "10 000 viewers · 1 clic",
-            "Chaque viewer clique une seule fois, arrivées étalées sur les trois premiers quarts de la passe.",
+            "Un clic par viewer. La plupart répondent tout de suite, un quart à la relance de mi-passe.",
             "Vote binaire (48 % / 44 %)"),
         new("1k50", "1 000 viewers · 50 clics",
-            "Chaque viewer clique 50 fois au rythme maximal autorisé par l'extension (250 ms) : ~4 000 clics/s pendant 12,5 s. Seul le dernier clic de chacun compte.",
-            "Vote fragmenté"),
+            "Un clic toutes les 250 ms, le maximum de l'extension : ~4 000 clics/s. Seul le dernier clic de chacun compte.",
+            "Vote fragmenté (6 cibles)"),
         new("50k", "50 000 viewers · 60 % cliquent",
-            "30 000 viewers cliquent ; 5 000 d'entre eux (10 % de l'audience) cliquent 5 fois. Attendu : exactement 30 000 votes.",
+            "30 000 viewers cliquent, dont 5 000 cinq fois. 30 000 votes attendus.",
             "Consensus (88 %)"),
         new("400", "400 viewers · arrêt / reprise",
-            "Les 400 viewers cliquent en continu (1 clic/s chacun). La collecte est arrêtée 10 s en plein milieu (clics refusés en 409, carte gelée), puis reprend et les viewers visent une autre cible.",
+            "Un clic par seconde et par viewer. Collecte coupée 10 s au milieu, puis nouvelle cible.",
             "Cible A puis cible B"),
     ];
 
@@ -119,12 +75,30 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
         long durationMs = (long)duration.TotalMilliseconds;
         var random = new Random(seed);
 
-        PointSource Source(Scenario scenario, int worldSeed) => distribution == Distribution.Known
-            ? PointSource.Pool(SyntheticData.Generate(scenario, 20_000, seed))
-            : PointSource.World(worldSeed);
+        Crowd Source(int viewers, int intervalMs, int worldSeed, params TargetSpec[] scene) =>
+            distribution == Distribution.Known
+                ? Crowd.Fixed(worldSeed, viewers, intervalMs / MindChangeMs, scene)
+                : Crowd.Drifting(worldSeed, viewers, intervalMs / MindChangeMs);
 
         long[] Spread(int count, long windowMs) =>
             [.. Enumerable.Range(0, count).Select(_ => (long)(random.NextDouble() * windowMs))];
+
+        // Temps de reaction log-normal : la plupart repondent vite, une traine arrive tard,
+        // et un quart ne clique qu'a la relance de mi-passe.
+        long[] Waves(int count, long windowMs) =>
+            [.. Enumerable.Range(0, count).Select(_ =>
+            {
+                bool relaunch = random.NextDouble() < 0.25;
+                double t;
+                do
+                {
+                    double gaussian = Math.Sqrt(-2.0 * Math.Log(1.0 - random.NextDouble())) * Math.Cos(Math.Tau * random.NextDouble());
+                    t = (relaunch ? 0.5 : 0.0) + (relaunch ? 0.06 : 0.12) * Math.Exp(gaussian * 0.8);
+                }
+                while (t >= 1.0);
+
+                return (long)(t * windowMs);
+            })];
 
         switch (Id)
         {
@@ -136,7 +110,7 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
                     StartMs = Spread(2_000, 1_000),
                     Clicks = Fill(2_000, ClickPlan.Continuous),
                     IntervalMs = 1_000,
-                    Before = PointSource.World(seed),
+                    Before = Crowd.Drifting(seed, 2_000, 1_000 / MindChangeMs),
                 };
 
             case "10k":
@@ -144,10 +118,12 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
                 {
                     Audience = 10_000,
                     Clickers = 10_000,
-                    StartMs = Spread(10_000, durationMs * 3 / 4),
+                    StartMs = Waves(10_000, durationMs * 3 / 4),
                     Clicks = Fill(10_000, 1),
                     IntervalMs = 250,
-                    Before = Source(Scenario.BinaryVote, seed),
+                    Before = Source(10_000, 250, seed,
+                        new(0.30f, 0.42f, 0.08f, 0.48f),
+                        new(0.72f, 0.56f, 0.08f, 0.44f)),
                     ExpectedVotes = 10_000,
                     ExpectedAccepted = 10_000,
                 };
@@ -160,7 +136,13 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
                     StartMs = Spread(1_000, 250),
                     Clicks = Fill(1_000, 50),
                     IntervalMs = 250,
-                    Before = Source(Scenario.Fragmented, seed),
+                    Before = Source(1_000, 250, seed,
+                        new(0.20f, 0.28f, 0.055f, 0.18f),
+                        new(0.50f, 0.28f, 0.055f, 0.17f),
+                        new(0.80f, 0.28f, 0.055f, 0.16f),
+                        new(0.20f, 0.72f, 0.055f, 0.15f),
+                        new(0.50f, 0.72f, 0.055f, 0.14f),
+                        new(0.80f, 0.72f, 0.055f, 0.12f)),
                     ExpectedVotes = 1_000,
                     ExpectedAccepted = 50_000,
                 };
@@ -174,10 +156,10 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
                 {
                     Audience = 50_000,
                     Clickers = 30_000,
-                    StartMs = Spread(30_000, durationMs * 3 / 4),
+                    StartMs = Waves(30_000, durationMs * 3 / 4),
                     Clicks = clicks,
                     IntervalMs = 250,
-                    Before = Source(Scenario.Consensus, seed),
+                    Before = Source(30_000, 250, seed, new TargetSpec(0.55f, 0.48f, 0.09f, 0.88f)),
                     ExpectedVotes = 30_000,
                     ExpectedAccepted = 25_000 + 5_000 * 5,
                 };
@@ -186,7 +168,6 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
             case "400":
             {
                 long middle = durationMs / 2;
-                bool known = distribution == Distribution.Known;
 
                 return new ClickPlan
                 {
@@ -195,12 +176,8 @@ internal sealed record BenchConfig(string Id, string Title, string Description, 
                     StartMs = Spread(400, 1_000),
                     Clicks = Fill(400, ClickPlan.Continuous),
                     IntervalMs = 1_000,
-                    Before = known
-                        ? PointSource.Pool(SyntheticData.SingleCluster(0.30f, 0.40f, 0.045f, 0.025f, 0.5f, 5_000, seed))
-                        : PointSource.World(seed),
-                    After = known
-                        ? PointSource.Pool(SyntheticData.SingleCluster(0.70f, 0.62f, 0.045f, 0.025f, 2.2f, 5_000, seed))
-                        : PointSource.World(seed + 1),
+                    Before = Source(400, 1_000, seed, new TargetSpec(0.30f, 0.40f, 0.08f, 0.92f)),
+                    After = Source(400, 1_000, seed + 1, new TargetSpec(0.70f, 0.62f, 0.08f, 0.92f)),
                     StopAtMs = middle - 5_000,
                     RestartAtMs = middle + 5_000,
                     ExpectedVotes = 400,

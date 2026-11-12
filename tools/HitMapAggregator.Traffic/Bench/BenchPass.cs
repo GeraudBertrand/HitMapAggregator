@@ -235,7 +235,7 @@ internal sealed class BenchPass(BenchOptions options, HttpClient http, HttpClien
             await foreach ((int viewer, int index) in due.Reader.ReadAllAsync(CancellationToken.None))
             {
                 long sentAt = Elapsed;
-                NormalizedPoint point = plan.SourceAt(sentAt).Next();
+                NormalizedPoint point = plan.SourceAt(sentAt).Next(viewer);
                 await SendAsync(jwts[viewer], point, viewer, lastAccepted);
 
                 if (index + 1 < plan.Clicks[viewer])

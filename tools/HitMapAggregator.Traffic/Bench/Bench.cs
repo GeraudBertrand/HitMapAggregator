@@ -15,8 +15,8 @@ using Microsoft.Extensions.Logging;
 namespace HitMapAggregator.Traffic.Bench;
 
 /// <summary>
-/// Banc de mesure : les quatre configs, chacune sur un jeu connu puis sur le monde
-/// aleatoire, avec une page en direct et un rapport HTML autonome a la fin.
+/// Banc de mesure : les quatre configs, chacune sur une scene fixe puis sur une scene
+/// aleatoire (voir <see cref="Crowd"/>), avec une page en direct et un rapport HTML autonome.
 /// </summary>
 internal static class Bench
 {
@@ -100,7 +100,7 @@ internal static class Bench
         Config = config.Id,
         Title = config.Title,
         Description = config.Description,
-        Distribution = distribution == Distribution.Known ? $"Jeu connu · {config.KnownScenario}" : "Monde aléatoire dérivant",
+        Distribution = distribution == Distribution.Known ? $"Scène fixe · {config.KnownScenario}" : "Scène aléatoire dérivante",
         Audience = plan?.Audience ?? 0,
         Clickers = plan?.Clickers ?? 0,
         StopAtS = plan?.StopAtMs / 1000.0,
